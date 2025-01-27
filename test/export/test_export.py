@@ -5486,8 +5486,8 @@ def forward(self, p_linear_weight, p_linear_bias, b_buffer, x):
             str(ep.graph_module.code).strip(),
             """\
 def forward(self, c_lifted_tensor_0, x):
-    lift_fresh_copy = torch.ops.aten.lift_fresh_copy.default(c_lifted_tensor_0);  c_lifted_tensor_0 = None
-    _assert_async = torch.ops.aten._assert_async.msg(lift_fresh_copy, 'Fail');  lift_fresh_copy = _assert_async = None
+    clone = torch.ops.prims.clone.default(c_lifted_tensor_0, memory_format = torch.preserve_format);  c_lifted_tensor_0 = None
+    _assert_async = torch.ops.aten._assert_async.msg(clone, 'Fail');  clone = _assert_async = None
     return (x,)""",
         )
 
@@ -9109,6 +9109,86 @@ graph():
         epm = ep.module()
         ufm = torch.export.unflatten(ep)
         self.assertTrue(torch.allclose(ufm(*inp), epm(*inp)))
+
+    def test_constant_tensor_with_non_functional(self):
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.params = torch.ones((4, 4, 10))
+
+            def forward(self, x):
+                ff = self.params + 2
+                ff2 = self.params + 1
+                buf = torch.ops.aten.sub_.Tensor(ff, ff2)
+                return buf.sum() + x.sum()
+
+        model = TestModel()
+
+        x = torch.zeros((4, 4, 10))
+
+        ep_training = torch.export.export_for_training(model, (x,), strict=False)
+        state_dict_before = ep_training.state_dict
+
+        ep = export(model, (x,), strict=False).run_decompositions()
+        state_dict_after = ep.state_dict
+        self.assertEqual(state_dict_before.keys(), state_dict_after.keys())
+
+        self.assertExpectedInline(
+            str(ep.graph_module.code).strip(),
+            """\
+def forward(self, c_params, x):
+    add = torch.ops.aten.add.Tensor(c_params, 2)
+    add_1 = torch.ops.aten.add.Tensor(c_params, 1);  c_params = None
+    sub = torch.ops.aten.sub.Tensor(add, add_1);  add = add_1 = None
+    sum_1 = torch.ops.aten.sum.dim_IntList(sub, []);  sub = None
+    sum_2 = torch.ops.aten.sum.dim_IntList(x, []);  x = None
+    add_2 = torch.ops.aten.add.Tensor(sum_1, sum_2);  sum_1 = sum_2 = None
+    return (add_2,)""",
+        )
+
+    def test_constant_tensor_with_non_functional_nested(self):
+        class SubMod(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.params = torch.ones((4, 4, 10))
+
+            def forward(self, x):
+                return x
+
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.submod = SubMod()
+
+            def forward(self, x):
+                ff = self.submod.params + 2
+                ff2 = self.submod.params + 1
+                buf = torch.ops.aten.sub_.Tensor(ff, ff2)
+                return buf.sum() + x.sum()
+
+        model = TestModel()
+
+        x = torch.zeros((4, 4, 10))
+
+        ep_training = torch.export.export_for_training(model, (x,), strict=False)
+        state_dict_before = ep_training.state_dict
+
+        ep = export(model, (x,), strict=False).run_decompositions()
+        state_dict_after = ep.state_dict
+        self.assertEqual(state_dict_before.keys(), state_dict_after.keys())
+
+        self.assertExpectedInline(
+            str(ep.graph_module.code).strip(),
+            """\
+def forward(self, c_submod_params, x):
+    add = torch.ops.aten.add.Tensor(c_submod_params, 2)
+    add_1 = torch.ops.aten.add.Tensor(c_submod_params, 1);  c_submod_params = None
+    sub = torch.ops.aten.sub.Tensor(add, add_1);  add = add_1 = None
+    sum_1 = torch.ops.aten.sum.dim_IntList(sub, []);  sub = None
+    sum_2 = torch.ops.aten.sum.dim_IntList(x, []);  x = None
+    add_2 = torch.ops.aten.add.Tensor(sum_1, sum_2);  sum_1 = sum_2 = None
+    return (add_2,)""",
+        )
 
     def test_cond_unflatten(self):
         class M1(torch.nn.Module):
