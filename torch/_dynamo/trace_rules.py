@@ -14,7 +14,6 @@ import inspect
 import multiprocessing
 import operator
 import os
-import random
 import re
 import sys
 import threading
@@ -3158,7 +3157,6 @@ BUILTIN_SKIPLIST = (
     inspect,
     multiprocessing,
     operator,
-    random,
     threading,
     traceback,
     types,
