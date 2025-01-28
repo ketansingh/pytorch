@@ -124,13 +124,16 @@ def _maybe_reenter_make_fx(fn):
 @contextmanager
 def _set_compilation_env():
     _old_is_tracing = torch.fx._symbolic_trace._is_fx_tracing_flag
+    _old_allow_empty_graphs = torch._dynamo.config.allow_empty_graphs
     try:
         # We need to turn off the is_fx_tracing_flag. Remove this flag check from dyanmo
         # once we are confident fx tracing works with dynamo.
         torch.fx._symbolic_trace._is_fx_tracing_flag = False
+        torch._dynamo.config.allow_empty_graphs = True
         yield
     finally:
         torch.fx._symbolic_trace._is_fx_tracing_flag = _old_is_tracing
+        torch._dynamo.config.allow_empty_graphs = _old_allow_empty_graphs
 
 
 def _detect_input_mutation(gm: torch.fx.GraphModule) -> bool:
