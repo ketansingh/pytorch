@@ -8,7 +8,6 @@ import importlib
 import inspect
 import operator
 import os
-import random
 import re
 import sys
 import traceback
@@ -3144,7 +3143,6 @@ def is_numpy_type_info(obj) -> bool:
 BUILTIN_SKIPLIST = (
     collections,
     inspect,
-    random,
     types,
     traceback,
     unittest,
