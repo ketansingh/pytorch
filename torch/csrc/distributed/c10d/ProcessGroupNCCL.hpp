@@ -18,6 +18,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 #include <torch/csrc/distributed/c10d/Backend.hpp>
 #include <torch/csrc/distributed/c10d/NCCLUtils.hpp>
@@ -126,6 +127,10 @@ static std::vector<std::string> TORCH_NCCL_LOG_CPP_STACK_ON_UNCLEAN_SHUTDOWN = {
 static std::vector<std::string> TORCH_NCCL_CUDA_EVENT_CACHE = {
     "TORCH_NCCL_CUDA_EVENT_CACHE"};
 
+// Control the number of ranks each root can cover during NCCL comm init.
+static std::vector<std::string> TORCH_NCCL_RANKS_PER_ROOT = {
+    "TORCH_NCCL_RANKS_PER_ROOT"};
+
 static std::vector<std::string> TORCH_NCCL_NAN_CHECK = {"TORCH_NCCL_NAN_CHECK"};
 
 constexpr const char* NCCL_BACKEND_NAME = "nccl";
@@ -176,6 +181,12 @@ static std::vector<std::string> TORCH_NCCL_AVOID_RECORD_STREAMS = {
 static std::vector<std::string> TORCH_NCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK =
     {"TORCH_NCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK",
      "NCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK"};
+
+// Return the rank of root and index during NCCL scalable comm init.
+static std::pair<int, int> getRootRankAndIndex(
+    const int rank,
+    const int nRanks,
+    const int nIds);
 
 #if defined(__linux__)
 struct DumpPipe {
@@ -801,6 +812,13 @@ class TORCH_API ProcessGroupNCCL : public Backend {
       bool isSingleP2POp,
       const std::string& devicesKey,
       int p2pRank);
+
+  // Helper that allgathers nccl unique IDs to all ranks through the store
+  void allgatherUniqueNCCLIDs(
+      int rootRank,
+      int rootIdx,
+      ncclUniqueId* ncclID,
+      std::vector<ncclUniqueId>& ncclIDs);
 
   // Helper that looks up the cached NCCL communicators only
   std::shared_ptr<NCCLComm> getNCCLComm(const std::string& deviceKey);
